@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import os
 import glob
-
+import math
 
 def points3Dto2D(x, y, z, rvecs, tvecs, mtx, dist):
     axis = np.float32([x, y, z]).reshape(-1,3)
@@ -13,6 +13,41 @@ def points3Dto2D(x, y, z, rvecs, tvecs, mtx, dist):
     imgpts = np.reshape(imgpts, 2)
     return imgpts
 
+def calculateError(objpoints, rvecs, tvecs, mtx, dist):
+	mean_error = 0
+	for i in range(len(objpoints)):
+		imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
+		error = cv2.norm(imgpoints[i],imgpoints2, cv2.NORM_L2)/len(imgpoints2)
+		mean_error += error
+	return mean_error/len(objpoints)
+
+# Checks if a matrix is a valid rotation matrix.
+def isRotationMatrix(R) :
+    Rt = np.transpose(R)
+    shouldBeIdentity = np.dot(Rt, R)
+    I = np.identity(3, dtype = R.dtype)
+    n = np.linalg.norm(I - shouldBeIdentity)
+    return n < 1e-6
+
+
+# Calculates rotation matrix to euler angles
+# The result is the same as MATLAB except the order
+# of the euler angles ( x and z are swapped ).
+def rotationMatrixToEulerAngles(R) :
+	#x - roll, y - pitch, z - yaw
+    assert(isRotationMatrix(R))
+    sy = math.sqrt(R[0,0] * R[0,0] +  R[1,0] * R[1,0])
+    singular = sy < 1e-6
+    if  not singular :
+        roll = math.atan2(R[2,1] , R[2,2])
+        pitch = math.atan2(-R[2,0], sy)
+        yaw = math.atan2(R[1,0], R[0,0])
+    else :
+        roll = math.atan2(-R[1,2], R[1,1])
+        pitch = math.atan2(-R[2,0], sy)
+        yaw = 0
+
+    return np.array([roll, pitch, yaw])
 
 # Определение размеров шахматной доски
 CHECKERBOARD = (5,8)
@@ -78,7 +113,9 @@ with open('rvecs.npy', 'wb') as f:
 with open('tvecs.npy', 'wb') as f:
     np.save(f, np.array(tvecs))
 
+total_error = calculateError(objpoints, rvecs, tvecs, mtx, dist)
+print('total_error: ', total_error)
 
-
-
-
+rmat = cv2.Rodrigues(np.asarray(rvecs))[0]
+print('Rmat: ', rmat)
+print('Angles: ', rotationMatrixToEulerAngles(rmat))
